@@ -32,10 +32,118 @@ ending maps, or almost any other map script. JP has the same vulnerable GC and
 GBA code, but its disc does **not** contain `startmap.cft`; it needs an existing
 JP script name instead.
 
-This is currently a **source-complete and GBA-harness-confirmed exploit
-chain**, not a speedrun-ready setup. The remaining large gate is producing the
-radar ROP row from a stable retail smith/map layout. The complete GC write has
-not yet been replayed end to end in Dolphin.
+The unrestricted form is currently a **source-complete and
+GBA-harness-confirmed exploit chain**, not a speedrun-ready setup. Its remaining
+large gate is producing the radar ROP row from a stable retail smith/map
+layout. The complete GC write has not yet been replayed end to end in Dolphin.
+
+There is also a substantially narrower **JP-only route which does not need
+radar ROP at all**. Legal character names can encode one particular positive
+receive length. A reset-stripped, ordinary 13-gil letter reply can then replace
+`G59` with 13 inside the Moogle nest. The normal Moogle return switch sends
+case 13 to `meteo_1`, whose first two exits load `meteo_2`, the Meteor Parasite
+fight. This route is source-complete, but the repeated live JoyBus-reset timing
+has not yet been performed against Dolphin's GameCube parent.
+
+## Restricted JP route: Moogle nest to Meteor Parasite
+
+This construction uses only legal JP name bytes and the normal letter UI. It
+does not require GES item deletion, a wrong-craft table, a malformed radar
+file, GBA code execution, or an out-of-range gift cursor.
+
+In the observed JP Tipa process:
+
+```text
+CFlat.m_permanentVarValues = 8094AEC0
+G59                        = 8094AFAC
+Joybus.recvBuffer[0].length  = 80306430
+Joybus.recvBuffer[0].payload = 80306438
+```
+
+`CFlatRuntime::Init` allocates the 0xC00-word value array once; changing map
+scripts does not reallocate it. `G59` and `G60` both have the persistent
+`0x20` variable flag. Thus the Tipa address remains the Moogle-nest address in
+the same boot. The target used below is two bytes before `G59`:
+
+```text
+(G59 - 2) - recvBuffer[0].payload = 00644B72
+```
+
+Channel 1's name-index grid reaches two bytes before port 0's receive length
+at signed packet count -17,351, or `BC39`:
+
+```text
+channel 1 indexed-write origin = 80312F83
+count BC39 writes              = 8030642E..80306430
+count BC3A writes              = 80306431..80306433
+```
+
+Both length writes are legal names. A one-character name such as `A` has an
+all-zero first continuation, which writes the high length byte. The name
+`AdKr` has first continuation `64 4B 72`, which writes the other three bytes.
+
+Channel 0 can install `BC39` in channel 1. After a normally received automatic
+empty-name transfer, channel 0's packet count is 6. Discard a new name header
+and accept three continuations to advance it to 9. The legal name `AAざ9`
+has raw bytes `41 41 82 BC 39`; after discarding its header, its first two
+continuations are:
+
+```text
+5C 41 82 BC   channel 1 active/result/counter high
+5C 39 00 00   channel 1 counter low/CRC
+```
+
+The resulting experimental schedule is:
+
+1. Put port 0 and port 1 into JP character creation and reach the name screen
+   on both. Let the automatic empty-name sends finish normally.
+2. On port 0, submit a short name, discard its `0x1C` header with a JoyBus
+   protocol reset, accept exactly three `0x5C` words, and discard the other
+   two. The GameCube-side port-0 count is now 9.
+3. On port 0, submit `AAざ9`, discard its header, and accept exactly the first
+   two continuations above. Channel 1's count is now `BC39`.
+4. On port 1, submit `A`, discard its header, and accept only its first
+   continuation (`5C 00 00 00`). Discard the other four.
+5. On port 1, submit `AdKr`, discard its header, and accept only its first
+   continuation (`5C 64 4B 72`). Port 0's receive length is now `00644B72`.
+6. Leave character creation without sending a letter reply. Enter Tipa's
+   Moogle nest. On port 0, reply to a letter with answer 0 and attach exactly
+   13 gil.
+7. Discard the reply's `0x15` header, but let its `0x55` middle and `0x95`
+   final words reach the GameCube.
+
+For a 13-gil attachment, those two payload triples are:
+
+```text
+00 01 00  00 00 0D
+```
+
+They begin at `G59-2`. No JP script directly references `G58`; the first two
+bytes change it from 0 to 1, while
+the remaining four bytes set `G59` to exactly 13. `SetRecvBuffer` performs
+both stores before checking the final-word CRC. The forged CRC necessarily
+fails and clears the receive buffer afterward, but the CFlat values remain
+changed. The CRC walk is about 6.6 MiB and remains within MEM1.
+
+On leaving the Moogle nest, `MJ_MOGSU` case 13 sets `G59=9`, sets `G60=1`,
+and loads `meteo_1`. In `meteo_1`, map exits 0 and 1 both load `meteo_2`.
+This is therefore a credible near-credit-warp rather than the broken JP
+`startmap` default branch.
+
+The practical gate is the reset choreography. It needs a JoyBus protocol
+reset after a word has been presented but before the GameCube consumes it,
+while preserving the GBA CPU and its transmit queue. The headless retail-GBA
+harness proves that this reset discards the presented word and preserves the
+queued continuations. Dolphin or controller-only reproduction of the entire
+two-port sequence is still outstanding.
+
+Dolphin's ordinary integrated-GBA device hot-swap is not suitable for this:
+`CSIDevice_GBAEmu` owns the mGBA core, and its destructor stops and destroys
+that core when the SI device is removed. Re-enabling the port creates a fresh
+core and loses `sTxQueue`. A physical powered GBA/cable or a lab hook which
+issues only the JoyBus protocol reset is needed for the first end-to-end test;
+the external socket GBA device is another candidate if its client can be
+disconnected and reattached without restarting the emulated GBA.
 
 ## The unrestricted GBA sender
 
@@ -231,6 +339,10 @@ cleaner high-value target.
 
 ## Remaining gates
 
+- The restricted JP Moogle-warp route avoids radar entirely, but still needs
+  the complete two-port reset schedule reproduced against Dolphin's live
+  GameCube parent. A GBA CPU reboot is not a substitute: it clears the transmit
+  queue which the schedule relies on.
 - The radar PC-control probe uses a synthetic map row. A stable retail
   smith/list sequence that builds the complete map header and row is still
   unsolved.

@@ -29,6 +29,14 @@ redirect it into the shared letter buffers. That gives a route from ordinary
 GC list/letter builders to the GBA radar-map parser, whose row decoder has an
 unchecked stack-array expansion.
 
+A different alignment removes the radar dependency for one high-value target.
+Channel 0 can set channel 1's counter to `BC39`; channel 1 can then write the
+positive port-0 receive length `00644B72` using only the legal names `A` and
+`AdKr`. A reset-stripped 13-gil reply consequently writes 13 to `G59`. Doing
+this inside the Moogle nest makes its normal JP return switch load `meteo_1`,
+which leads directly to the Meteor Parasite map. See the
+[restricted JP Moogle-warp schedule](gba-gc-arbitrary-write.md#restricted-jp-route-moogle-nest-to-meteor-parasite).
+
 ## Why channel 3 matters
 
 The four records are consecutive 0x20-byte `GbaCMakeInfo` objects. An
