@@ -39,11 +39,14 @@ layout. The complete GC write has not yet been replayed end to end in Dolphin.
 
 There is also a substantially narrower **JP-only route which does not need
 radar ROP at all**. Legal character names can encode one particular positive
-receive length. A reset-stripped, ordinary 13-gil letter reply can then replace
-`G59` with 13 inside the Moogle nest. The normal Moogle return switch sends
-case 13 to `meteo_1`, whose first two exits load `meteo_2`, the Meteor Parasite
-fight. This route is source-complete, but the repeated live JoyBus-reset timing
-has not yet been performed against Dolphin's GameCube parent.
+receive length. After a boss, an ordinary 13-gil reply can be queued while the
+GBA is disconnected and then carried on the powered GBA to Tipa. Reconnecting
+inside the Moogle nest with a JoyBus protocol reset discards the queued header
+but preserves its middle and final words; those words replace `G59` with 13.
+The normal Moogle return switch sends case 13 to `meteo_1`, whose first two
+exits load `meteo_2`, the Meteor Parasite fight. This route is source-complete,
+but the repeated live JoyBus-reset timing has not yet been performed against
+Dolphin's GameCube parent.
 
 ## Restricted JP route: Moogle nest to Meteor Parasite
 
@@ -106,11 +109,21 @@ The resulting experimental schedule is:
    continuation (`5C 00 00 00`). Discard the other four.
 5. On port 1, submit `AdKr`, discard its header, and accept only its first
    continuation (`5C 64 4B 72`). Port 0's receive length is now `00644B72`.
-6. Leave character creation without sending a letter reply. Enter Tipa's
-   Moogle nest. On port 0, reply to a letter with answer 0 and attach exactly
-   13 gil.
-7. Discard the reply's `0x15` header, but let its `0x55` middle and `0x95`
-   final words reach the GameCube.
+6. Leave character creation without sending a letter reply. Complete a
+   dungeon and reach the reply UI during the post-boss mail sequence. Select
+   answer 0 and an attachment of exactly 13 gil, but do not make the final
+   confirmation yet.
+7. Disconnect the link while keeping the GBA powered. Make the final
+   confirmation on the disconnected GBA. `Link_SendLetterReply` queues all
+   three reply words locally: `0x15`, `0x55`, then `0x95`.
+8. Finish the post-boss sequence using a GameCube controller, return to the
+   world, enter Tipa, and enter the Moogle nest. Keep the reply-producing GBA
+   powered and disconnected throughout. These transitions may replace `G59`;
+   entering the nest normally leaves it at 15.
+9. Reconnect the still-running GBA inside the nest using a JoyBus protocol
+   reset. The reset must discard the presented `0x15` header without rebooting
+   the GBA, preserving the queued `0x55` middle and `0x95` final words. Let
+   both continuations reach the GameCube, then leave the nest normally.
 
 For a 13-gil attachment, those two payload triples are:
 
@@ -118,12 +131,16 @@ For a 13-gil attachment, those two payload triples are:
 00 01 00  00 00 0D
 ```
 
-They begin at `G59-2`. No JP script directly references `G58`; the first two
-bytes change it from 0 to 1, while
-the remaining four bytes set `G59` to exactly 13. `SetRecvBuffer` performs
-both stores before checking the final-word CRC. The forged CRC necessarily
-fails and clears the receive buffer afterward, but the CFlat values remain
-changed. The CRC walk is about 6.6 MiB and remains within MEM1.
+They begin at `G59-2`. No JP script directly references `G58`. The middle word
+changes the low half of `G58` to 1 and writes zero to the high byte of `G59`;
+the final `00 00 0D` bytes replace its low three bytes. Together they set
+`G59` to exactly 13. Queuing the entire reply until the nest is necessary
+because the ordinary post-boss and world/town transitions replace `G59`.
+
+`SetRecvBuffer` performs the final store before checking the final-word CRC.
+The forged CRC necessarily fails and clears the receive buffer afterward, but
+the CFlat value remains changed. The CRC walk is about 6.6 MiB and remains
+within MEM1.
 
 On leaving the Moogle nest, `MJ_MOGSU` case 13 sets `G59=9`, sets `G60=1`,
 and loads `meteo_1`. In `meteo_1`, map exits 0 and 1 both load `meteo_2`.
