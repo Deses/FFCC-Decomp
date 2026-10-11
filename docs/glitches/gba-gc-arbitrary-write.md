@@ -125,6 +125,31 @@ The resulting experimental schedule is:
    the GBA, preserving the queued `0x55` middle and `0x95` final words. Let
    both continuations reach the GameCube, then leave the nest normally.
 
+This does not require an additional saved character. The current route already
+creates three: the slot-3 `あ` Tailor first, followed by the slot-1 `い`
+Merchant and slot-2 `えkk` Rancher with two GBAs. The four names in steps 2-5
+are interrupted submissions, not characters which must be completed. Run the
+corruption while creating those latter two characters. After the receive
+length is forged, an ordinary accepted name header resets each creation
+record's packet count and clears its name field without restoring the
+unrelated JoyBus receive length. The two GBAs can then submit their intended
+final names and finish creating `い` and `えkk` normally. The one-character
+names of the Tailor and Merchant are conveniences rather than byte-critical
+parts of the exploit.
+
+For the later reply, select `えkk` as player 1 on port 0; the forged length is
+specifically port 0's receive buffer. The Merchant/mule on the other port can
+both supply the port-1 `A`/`AdKr` traffic during setup and absorb the unwanted
+unique first letter, leaving the `{name}` letter for `えkk` as in the existing
+route.
+
+The `{name}` letter is special to wrong crafting because its rendered body
+primes the shared list buffer with the runner's name bytes. It is not special
+to the final arbitrary write: that stage only needs a letter with at least one
+reply choice and the ordinary gil-attachment UI. The live `{name}` route
+letter has two reply lines, so the same letter can serve both purposes as long
+as it was read but not previously replied to.
+
 For a 13-gil attachment, those two payload triples are:
 
 ```text
