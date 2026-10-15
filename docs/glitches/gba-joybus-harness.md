@@ -52,16 +52,24 @@ wait FRAMES
 keys MASK
 drain
 state
+regs
 dump ADDRESS SIZE
 poke8 ADDRESS VALUE
 poke16 ADDRESS VALUE
 poke32 ADDRESS VALUE
 call-thumb ADDRESS R0 [R1]
+call-thumb-until ADDRESS R0 R1 STOP [LIMIT]
+step-trace COUNT
 quiesce
 sweep-smith
 probe-queue-reset
 probe-letter-reply-reset
+probe-western-warp-packets
+probe-smith-letter-index TARGET
+probe-western-smith-letter-index EN|PAL TARGET
 probe-radar-stack
+probe-radar-complete-western
+probe-radar-western-stack-pivot
 probe-radar-rop
 probe-radar-item-rop
 probe-radar-cmdslot-rop
@@ -84,6 +92,15 @@ Type 1 downloads to `DOWNLOAD_BUF`; types 3, 6, 7, 8, and 9 download to
 `LIST_BUF`. `call-thumb` makes isolated retail functions callable with
 controlled `r0` and `r1`. `poke*` and the probes currently use JP retail
 addresses.
+
+The smith-letter-index probes use the complete retail item-534 (Firaga +2)
+smith record with its inventory index set to 1. At target 178, the unmodified
+JP, EN and PAL clients all reach the same selection and queue
+`0x00B2020C`, the normal `REQ_LETTER(178)` packet. Replays are in:
+
+- `tools/gba_joybus_jp_smith_letter_index_178_probe.txt`
+- `tools/gba_joybus_en_smith_letter_index_178_probe.txt`
+- `tools/gba_joybus_pal_smith_letter_index_178_probe.txt`
 
 ## Confirmed experiments
 
@@ -167,6 +184,19 @@ This is the first emulator-confirmed producer for the parser underflow; the
 remaining work is forcing the reset window with the retail GameCube parent and
 testing how far negative-slot character creation survives.
 
+The retail GameCube parent does have a matching primitive. JoyBus worker state
+3 calls SDK `GBAReset`, then performs the ordinary reconnect handshake. Its
+state byte is `Joybus + 0x5D38 + 0x3C*port`; this is independently visible in
+the retail assembly as the `0x5D10` `ThreadParam` base, `0x3C` stride and
+`0x28` member offset. `tools/gba_gc_warp_lab.py --live
+--trigger-joy-reset PORT` requests that path and snapshots the GC-side CMake
+records around it. A live PAL test during the ordinary character-name keyboard
+window reset and reconnected the GBA successfully, but changed its active
+creation record (`result=28`, `packetCount=6`) to all zeroes. The straightforward
+active-keyboard timing is therefore unusable on PAL. The remaining problem is
+a natural trigger aligned with a character-select early-return or transition
+window, not the existence of a suitable reset on either endpoint.
+
 ### Letter-reply middle word survives while both guards are discarded
 
 `tools/gba_joybus_letter_reply_reset_probe.txt` calls the retail JP
@@ -191,6 +221,42 @@ This is the ordering needed for the GameCube receive-buffer overflow described
 in [What the GameCube Trusts from the GBA](gba-gc-trust.md#reset-stripped-letter-replies-append-without-a-bound-or-crc).
 The harness proves the GBA queue behavior; the unchecked GameCube append and
 reconnect lifetime are established from the GameCube source.
+
+The integrated Dolphin/mGBA lab now proves the GameCube half as well. In
+[`jp_mog_0_to_meteo_1_exploit.json`](../../tools/ffcc_lab_trials/jp_mog_0_to_meteo_1_exploit.json),
+the active retail client executes `Link_SendLetterReply` for a 13-gil
+attachment. A powered cable handoff lets port 3 consume the header and returns
+the same GBA to port 0 for the two continuations. Retail
+`JoyBus::SetRecvBuffer` writes `G59=13`; leaving the Moogle nest subsequently
+loads `meteo_1`. This is distinct from the standalone fake-parent probe: both
+processors and the map script are running together, and the trace contains no
+injected packet.
+
+### EN/PAL restricted-warp packet lab
+
+`tools/gba_joybus_western_warp_probe.txt` runs identically against the EN and
+PAL retail clients. It calls their real `Link_SendCMakeName` and
+`Link_SendLetterReply` functions and captures the exact words for both
+candidate receive slots:
+
+```powershell
+build/tools/gba_joybus_harness.exe orig/GCCE01/files/dvd/gba/ffcc_cli.bin tools/gba_joybus_western_warp_probe.txt
+build/tools/gba_joybus_harness.exe orig/GCCP01/files/dvd/gba/ffcc_cli.bin tools/gba_joybus_western_warp_probe.txt
+```
+
+The legal name `AAAÀA` emits continuations containing `C0` and `41`, enough
+to install the receive-slot-3 counter `C041`, although that slot's length is
+not keyboard-encodable. Receive slot 0 needs counter `BC39`; the probe now
+demonstrates the fully legal workaround. Name `AAA»ó` installs `BBF3`;
+fourteen five-word zero name groups advance it the remaining 70 steps. The
+writes remain inside the
+GC message-temporary/path-buffer interval immediately before receive slot 0.
+The legal length name `AcÀ"` then emits `63 C0 22`.
+
+The companion `tools/gba_gc_warp_lab.py` reads the live CFlat pointer from
+Dolphin, checks all counter and length bytes against the EN/PAL keyboard,
+prints the safe counter walk and exact overwritten ranges, and can enumerate
+every directly encodable CFlat global.
 
 ### Radar row expansion gives confirmed GBA PC control
 
@@ -225,6 +291,82 @@ stream header `10 00 00 00` (type `0x10`, decompressed size zero) returns
 cleanly in the retail client. A retail smith-stream solver therefore needs one
 exact zero-length LZ77 word at map offset `0x20`, not an entire compressed tile
 map.
+
+### A complete smith-record map reaches the western ARM stage
+
+`probe-radar-complete-western` replaces the earlier fabricated three-token
+row with the exact bytes made by a PAL smith list in the saved Tipa snapshot.
+The map source begins at record 0 byte 31:
+
+```text
+record 0  item 4000
+record 1  item 14624
+record 5  item 405
+record 10 item 10284
+record 11 item 17225
+record 12 item 416
+```
+
+The first pair supplies the header and zero-length LZ stream, item 405 supplies
+`MapInfo` and its row lengths, and the final three records supply the 41 tokens
+of row 5. `Radar_DrawMap` expands that real row to exactly 298 halfwords and
+returns to `03000001`. The existing LinkWork bytes fall through to the queued
+western name, switch to ARM, and branch to PAL `DOWNLOAD_BUF+60C`:
+
+```text
+probe-radar-stream entry target=0x03000001
+probe-radar-arm-branch target=0x0203860C
+```
+
+The EN image uses the same construction with legal name byte `D1`, targeting
+`0203460C`; PAL uses `E1`. A later-row form places items 1369, 13568 and 416
+at records 17-19 and selects row 21 with base position `(81,752)`. It reaches
+the same PC with a clean `Z=1` ARM-entry state while leaving records 6-16 free.
+
+The later-row probe also accepts the adjacent legal PAL name bytes. The retail
+client confirms these three ARM entries without patching its code:
+
+```text
+probe-radar-complete-western-late-slot 0xE0 -> 0203820C
+probe-radar-complete-western-late-slot 0xE1 -> 0203860C
+probe-radar-complete-western-late-slot 0xE2 -> 02038A0C
+```
+
+Each arrives with `r0=00040000`, `r2=r12=040000B0`, `r6=00010000`,
+`sp=03007F00`, ARM mode and `Z=1`. In the real Smith byte stream the landings
+correspond to record 9 byte 51, record 28 byte 11 and record 46 byte 27. The
+adjacent name character is therefore an alignment control, not merely an
+equivalent branch target.
+
+`gba_smith_arm_search.py` uses Unicorn only as a fast candidate filter over
+complete zero-material Smith records. Its hits require replay in this mGBA
+harness. Current bounded results contain no sender: `E2` has no hit through
+eight selected records, while `E0` has no hit through its seven free records
+before the fixed row-21 records. Item 1276 can execute
+`STM r0,{r11,r12,pc}` with `r0=040000B0`, populating DMA0's source,
+destination and control words in one record. The observed destination is
+`03007EFF` and the PC-derived control word does not enable DMA. No searched
+state yet supplies `r12=04000154` plus a later enabled control write, so this
+is DMA register control rather than a JoyBus packet.
+
+Do not treat `probe-radar-bg-affine` as proof of a BIOS gadget. That legacy
+probe did not place code at its alleged ARM target and only traversed cleared
+memory. Likewise, first-PC probes must include the entire final Smith record;
+truncating at the saved PC suppresses suffix writes and creates false sender
+results.
+
+This proves a real GBA-side producer, not the final GameCube setup. Normal
+smith data arrives in `LIST_BUF`, whereas the tested map is consumed from
+`DOWNLOAD_BUF`. Finding a retail wrong-menu or pointer-lifetime operation that
+crosses those buffers remains the decisive western staging problem.
+
+A legal name can instead branch directly to the intact list (EN byte `E2`,
+PAL byte `EA`). Item-count alignment exposes every four-byte record offset.
+The clean-record sweep found no direct sender. The most promising ARMv4 stack
+pivot, `SUBEQ pc,sp,r1,LSR #31`, does execute in mGBA but the currently
+available three-halfword tail runs into caller-stack data and crashes without
+presenting a word. `probe-radar-western-stack-pivot` preserves this negative
+result as a reproducible test.
 
 ### Radar PC control reaches a legal-name payload and sends to the GameCube
 
@@ -337,11 +479,37 @@ Two variants show immediate exploit value:
   limited to a canned packet helper. It is the outbound half of the
   [arbitrary GameCube write](gba-gc-arbitrary-write.md).
 
-These probes synthesize the radar row and stack words. They prove that a GBA
-crash is unnecessary and that legal player-name bytes are a viable second
-stage in all regions. The remaining retail gate is making the redirected GC map buffer
-contain the required header, row tokens and stack values. Of the demonstrated
-payoffs, the letter-reply variant reaches the widest address range. The new
-command-write variant is narrower but writes an exact value rather than fixed
-`0xFFFF`; its most practical target is a forged item-bearing letter which can
-be claimed later in single-player mode.
+These payload-specific probes synthesize their radar stack words. They prove
+that a GBA crash is unnecessary and that legal player-name bytes are a viable
+second stage in all regions. A separate real smith stream supplies a complete
+western header and PC-control row, but it does not yet supply these larger
+register payloads. The corrected GC-side `C02D -> BF2C -> DE36` pointer chain
+now supplies the static `LIST_BUF` -> `DOWNLOAD_BUF` bridge; its multi-port
+controller choreography is not harnessed end to end. Of the demonstrated payoffs, the letter-reply variant
+reaches the widest address range. The command-write variant is narrower but
+writes an exact value rather than fixed `0xFFFF`; its most practical target is
+a forged item-bearing letter which can be claimed later in single-player mode.
+
+## Smith screen 9 selects fake letter 178
+
+The smith-letter-index probes model a normal completed letter list followed by
+the ordinary one-recipe smith header `01 01 00 00` and the complete item-534
+(Firaga +2) smith record. They then enter smith screen 9 and drive the retail
+letter-list input code with Down and A. JP, EN and PAL all produce:
+
+```text
+top=171 cursor=7 selected=0xB2
+queued: 0x00B2020C
+```
+
+Little-endian packet bytes are `0C 02 B2 00`, the normal GC request to open
+letter 178. On the GC, that index's opened-bit store lands on the next
+`CCaravanWork::m_id`. A male Yuke then derives the desired 655.35-radius data
+pointer after reload, but the same corrupt ID is also an invalid player model
+number. The required post-load ID sanitizer is described in
+[GBA/GC trust](gba-gc-trust.md#smith-screen-9-can-select-index-178-with-an-ordinary-one-recipe-packet).
+The replay inputs are
+[`tools/gba_joybus_jp_smith_letter_index_178_probe.txt`](../../tools/gba_joybus_jp_smith_letter_index_178_probe.txt),
+[`tools/gba_joybus_en_smith_letter_index_178_probe.txt`](../../tools/gba_joybus_en_smith_letter_index_178_probe.txt),
+and
+[`tools/gba_joybus_pal_smith_letter_index_178_probe.txt`](../../tools/gba_joybus_pal_smith_letter_index_178_probe.txt).
