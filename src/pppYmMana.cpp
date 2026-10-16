@@ -109,7 +109,13 @@ static void CalcReflectionVector2(
     Mtx rotateMtx;
     Mtx nodeOffsetMtx;
     Mtx workMtx;
+    u8 fmt;
     u16* dl = (u16*)displayList;
+    u8 drawFmt;
+    u16 itemCount;
+    int i;
+    u16 posIndex;
+    u16 normalIndex;
     const float zero = 0.0f;
     const float denomBias = 1.0f;
     const float half = 0.5f;
@@ -142,28 +148,29 @@ static void CalcReflectionVector2(
     normalMtx[1][3] = 0.0f;
     normalMtx[2][3] = 0.0f;
 
-    u16* dlEnd = (u16*)((u8*)displayList + displayListSize);
-    while (dl < dlEnd) {
-        u8 drawFmt = *(u8*)dl;
-        u16 itemCount = *(u16*)((u8*)dl + 1);
-        int i;
-        u32 fmt = drawFmt & 7;
+    while (dl < (u16*)((u8*)displayList + displayListSize)) {
+        drawFmt = *(u8*)dl;
+        itemCount = *(u16*)((u8*)dl + 1);
+        fmt = drawFmt & 7;
 
         dl = (u16*)((u8*)dl + 3);
-        if (gUtil.IsHasDrawFmtDL(drawFmt) == 0) {
+        if (Util.IsHasDrawFmtDL(drawFmt) == 0) {
             break;
         }
 
         for (i = 0; i < itemCount; i++) {
-            u16 posIndex = dl[0];
-            u16 normalIndex = dl[1];
+            float tx;
+            float ty;
+
+            posIndex = dl[0];
+            normalIndex = dl[1];
             dl += 4;
             if (fmt == 2) {
                 dl++;
             }
 
-            gUtil.ConvI2FVector(position, positions[posIndex], posScale);
-            gUtil.ConvI2FVector(normal, normals[normalIndex], normalScale);
+            Util.ConvI2FVector(position, positions[posIndex], posScale);
+            Util.ConvI2FVector(normal, normals[normalIndex], normalScale);
             PSMTXMultVec(nodeRotMtx, &position, &position);
             PSMTXMultVec(normalMtx, &normal, &normal);
 
@@ -192,9 +199,11 @@ static void CalcReflectionVector2(
             uv.y *= half;
             uv.x += half;
             uv.y += half;
-            uv.x = uv.x - scale * (warp * (uv.x - half));
-            uv.y = uv.y - scale * (warp * (uv.y - half));
-            gUtil.ConvF2IVector2d(texCoordA[posIndex], uv, 12);
+            tx = warp * (uv.x - half);
+            ty = warp * (uv.y - half);
+            uv.x = uv.x - scale * tx;
+            uv.y = uv.y - scale * ty;
+            Util.ConvF2IVector2d(texCoordA[posIndex], uv, 12);
 
             uv.x = -reflectionVec[posIndex].x / (denomBias - reflectionVec[posIndex].z);
             uv.y = -reflectionVec[posIndex].y / (denomBias - reflectionVec[posIndex].z);
@@ -202,9 +211,11 @@ static void CalcReflectionVector2(
             uv.y *= half;
             uv.x += half;
             uv.y += half;
-            uv.x = uv.x - scale * (warp * (uv.x - half));
-            uv.y = uv.y - scale * (warp * (uv.y - half));
-            gUtil.ConvF2IVector2d(texCoordB[posIndex], uv, 12);
+            tx = warp * (uv.x - half);
+            ty = warp * (uv.y - half);
+            uv.x = uv.x - scale * tx;
+            uv.y = uv.y - scale * ty;
+            Util.ConvF2IVector2d(texCoordB[posIndex], uv, 12);
         }
     }
 
@@ -519,8 +530,6 @@ static int RenderWaterMesh(VYmMana* mana)
  * JP Address: TODO
  * JP Size: TODO
  */
-#pragma push
-#pragma opt_common_subs off
 static int UpdateWaterMesh(VYmMana* mana)
 {
     float* waterHeightA;
@@ -529,7 +538,12 @@ static int UpdateWaterMesh(VYmMana* mana)
     Vec origin;
     float currentScale;
     float neighborScale;
+    s32 col;
+    s32 row;
+    int index;
+    s32 stride;
 
+    stride = 0x11;
     waterHeightA = mana->m_waterHeightA;
     positions = mana->m_positions;
     waterHeightB = mana->m_waterHeightB;
@@ -537,15 +551,14 @@ static int UpdateWaterMesh(VYmMana* mana)
         return 0;
     }
 
-    for (int row = 1; row < 0x10; row++) {
+    for (row = 1; row < 0x10; row++) {
         currentScale = 0.0f;
         neighborScale = 0.5f;
-        for (int col = 1; col < 0x10; col++) {
-            int index = row * 0x11 + col;
-            float* center = &waterHeightA[index];
-            waterHeightB[index] = currentScale * center[0] +
-                                  neighborScale * (waterHeightA[index - 0x11] + waterHeightA[index + 0x11] +
-                                                   center[-1] + center[1]) -
+        for (col = 1; col < 0x10; col++) {
+            index = row * stride + col;
+            waterHeightB[index] = currentScale * waterHeightA[index] +
+                                  neighborScale * (waterHeightA[index - stride] + waterHeightA[index + stride] +
+                                                   waterHeightA[index - 1] + waterHeightA[index + 1]) -
                                   waterHeightB[index];
         }
     }
@@ -567,7 +580,6 @@ static int UpdateWaterMesh(VYmMana* mana)
                               mana->m_waterMtx, mana->m_colors, mana->m_texCoord1);
     return 1;
 }
-#pragma pop
 
 /*
  * --INFO--
@@ -771,7 +783,7 @@ static void Mana_BeforeDrawCallback(CChara::CModel*, void* workPtr, void* step, 
             C_MTXLookAt(lookAtMtx, (Point3d*)&centerPos, &cameraUp, (Point3d*)&cameraPos);
             Graphic.SetViewport();
             GXSetScissor(rectOrigin, rectOrigin, 0x80, 0x80);
-            gUtil.RenderTextureQuad(0.0f, 0.0f, 128.0f, 128.0f,
+            Util.RenderTextureQuad(0.0f, 0.0f, 128.0f, 128.0f,
                                     sourceIter, 0, 0, 0, (_GXBlendFactor)4, (_GXBlendFactor)5);
 
             GXSetViewport(0.0f, 0.0f, 128.0f, 128.0f, 0.0f, 1.0f);
@@ -829,7 +841,7 @@ static void Mana_BeforeDrawCallback(CChara::CModel*, void* workPtr, void* step, 
         Graphic.SetViewport();
         GXSetProjection(savedScreenMtx, (_GXProjectionType)0);
         CameraPcs.SetViewMatrix(savedCameraMtx);
-        gUtil.RenderTextureQuad(0.0f, 0.0f, 128.0f, 128.0f, &sceneTexObj,
+        Util.RenderTextureQuad(0.0f, 0.0f, 128.0f, 128.0f, &sceneTexObj,
                                 0, 0, 0, (_GXBlendFactor)4, (_GXBlendFactor)5);
     } else {
         if (mana->m_paraboloidReady == 0) {
@@ -839,7 +851,7 @@ static void Mana_BeforeDrawCallback(CChara::CModel*, void* workPtr, void* step, 
                               mana->m_paraboloidMapSize, envTexture0->GetTexObj(), 1);
             drawParaboloidMap(sourceTexObjs, mana->m_generatedTexObj0, mana->m_paraboloidMap,
                               mana->m_paraboloidMapSize, envTexture0->GetTexObj(), 0);
-            gUtil.RenderTextureQuad(0.0f, 0.0f, 128.0f, 128.0f, &sceneTexObj,
+            Util.RenderTextureQuad(0.0f, 0.0f, 128.0f, 128.0f, &sceneTexObj,
                                     0, 0, 0, (_GXBlendFactor)4, (_GXBlendFactor)5);
             mana->m_paraboloidReady = 1;
         }
@@ -1057,7 +1069,7 @@ void pppFrameYmMana(PYmMana* ymMana, pppYmManaStep* step, _pppCtrlTable* ctrl)
                         mana->m_displayListSize = displayList->m_size;
                         memcpy(mana->m_displayListCopies[dlIndex], displayList->m_data, displayList->m_size);
                         DCFlushRange(mana->m_displayListCopies[dlIndex], displayList->m_size);
-                        gUtil.ReWriteDisplayList(mana->m_displayListCopies[dlIndex], displayList->m_size, 3);
+                        Util.ReWriteDisplayList(mana->m_displayListCopies[dlIndex], displayList->m_size, 3);
                     }
                 }
 

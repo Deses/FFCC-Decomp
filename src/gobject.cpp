@@ -29,8 +29,6 @@
 #include <math.h>
 #include <string.h>
 
-extern const Vec DAT_801D9B88;
-extern const Vec DAT_801D9B94;
 
 STATIC_ASSERT(offsetof(CCaravanWork, m_genderFlag) == 0x3E2);
 STATIC_ASSERT(offsetof(CGObjWork, m_saveSlot) == 0x08);
@@ -174,7 +172,7 @@ static inline float WrapAnimFrame(float value, float span)
 
 inline void CMapPcs::CalcHitPosition(Vec* hitPosition)
 {
-    MapMng.m_hitMapObj->CalcHitPosition(hitPosition);
+    g_MapMng.m_hitMapObj->CalcHitPosition(hitPosition);
 }
 
 inline int CMapPcs::CheckHitCylinderNear(Vec* cylinderBottom, Vec* direction, float radius, unsigned long hitMask)
@@ -185,17 +183,17 @@ inline int CMapPcs::CheckHitCylinderNear(Vec* cylinderBottom, Vec* direction, fl
     cylinder.m_axis = *direction;
     cylinder.m_radius = radius;
 
-    return MapMng.CheckHitCylinderNear(&cylinder, direction, hitMask);
+    return g_MapMng.CheckHitCylinderNear(&cylinder, direction, hitMask);
 }
 
 inline void CMapPcs::GetHitFaceNormal(Vec* normal)
 {
-    MapMng.m_hitMapObj->GetHitFaceNormal(normal);
+    g_MapMng.m_hitMapObj->GetHitFaceNormal(normal);
 }
 
 inline int CMapPcs::CalcHitSlide(Vec* move, float scale)
 {
-    return MapMng.m_hitMapObj->CalcHitSlide(move, scale);
+    return g_MapMng.m_hitMapObj->CalcHitSlide(move, scale);
 }
 
 inline int CMapPcs::GetHitGrpNo()
@@ -205,7 +203,7 @@ inline int CMapPcs::GetHitGrpNo()
 
 inline unsigned long CMapPcs::GetHitGrpBit()
 {
-    return MapMng.GetMapIdGrpArray()[gMapHitFace->m_groupIndex].m_mask;
+    return g_MapMng.GetMapIdGrpArray()[gMapHitFace->m_groupIndex].m_mask;
 }
 
 namespace std {
@@ -326,8 +324,8 @@ float CGObject::CalcSafePos(int hitMask, CGObject* other, Vec* outSafePos)
     hitCylinder.m_axis.z = hitMove.z;
     hitCylinder.m_radius = hitRadius;
 
-    if (MapMng.CheckHitCylinderNear(&hitCylinder, &hitMove, hitMask) != 0) {
-        MapMng.m_hitMapObj->CalcHitPosition(&centerPos);
+    if (g_MapMng.CheckHitCylinderNear(&hitCylinder, &hitMove, hitMask) != 0) {
+        g_MapMng.m_hitMapObj->CalcHitPosition(&centerPos);
         centerPos.y -= m_capsuleHalfHeight;
         *outSafePos = centerPos;
         safeDistance = PSVECDistance(&m_worldPosition, &centerPos);
@@ -343,8 +341,8 @@ float CGObject::CalcSafePos(int hitMask, CGObject* other, Vec* outSafePos)
         safeCylinder.m_axis = hitMove;
         safeCylinder.m_radius = safeRadius;
 
-        if (MapMng.CheckHitCylinderNear(&safeCylinder, &hitMove, hitMask) != 0) {
-            MapMng.m_hitMapObj->CalcHitPosition(&centerPos);
+        if (g_MapMng.CheckHitCylinderNear(&safeCylinder, &hitMove, hitMask) != 0) {
+            g_MapMng.m_hitMapObj->CalcHitPosition(&centerPos);
             safeDistance = (m_capsuleHalfHeight + other->m_capsuleHalfHeight) -
                            PSVECDistance(&m_worldPosition, &centerPos);
         }
@@ -428,13 +426,10 @@ void CGObject::CalcSphereNearPos(float scale, float angleOffset, Vec& outPos)
     Vec bitangent;
     Vec tangent;
     Vec normal;
-    Vec up;
+    Vec up = {0.0f, 1.0f, 0.0f};
     Vec offset;
     Mtx rotationMtx;
 
-    *reinterpret_cast<int*>(&up.x) = *reinterpret_cast<const int*>(&DAT_801D9B94.x);
-    *reinterpret_cast<int*>(&up.y) = *reinterpret_cast<const int*>(&DAT_801D9B94.y);
-    *reinterpret_cast<int*>(&up.z) = *reinterpret_cast<const int*>(&DAT_801D9B94.z);
 
     PSVECNormalize(&m_worldPosition, &normal);
     PSVECCrossProduct(&normal, &up, &bitangent);
@@ -1784,7 +1779,7 @@ void CGObject::update()
         Mtx tempMtx;
 
         PSMTXRotRad(modelMtx, 'y', atan2f(m_worldPosition.x, m_worldPosition.z));
-        Vec mapUp = DAT_801D9B88;
+        Vec mapUp = {0.0f, 1.0f, 0.0f};
         Vec worldNorm;
         PSVECNormalize(&m_worldPosition, &worldNorm);
         PSMTXRotRad(tempMtx, 'x', acosf(PSVECDotProduct(&mapUp, &worldNorm)));
@@ -2872,20 +2867,13 @@ void CGObject::move()
                 if (0.01f < slideSq) {
                     Mtx yawMtx;
                     Mtx pitchMtx;
-                    Vec worldUp;
-                    Vec worldPosNorm;
-                    Vec tangent;
-                    Vec moveNorm;
-                    Vec cross;
-
                     PSMTXRotRad(yawMtx, 'y', static_cast<float>(atan2(static_cast<double>(m_worldPosition.x),
                                                                       static_cast<double>(m_worldPosition.z))));
-                    reinterpret_cast<u32*>(&worldUp)[0] = reinterpret_cast<const u32*>(&sMap21WorldUpAxis)[0];
-                    reinterpret_cast<u32*>(&worldUp)[1] = reinterpret_cast<const u32*>(&sMap21WorldUpAxis)[1];
-                    reinterpret_cast<u32*>(&worldUp)[2] = reinterpret_cast<const u32*>(&sMap21WorldUpAxis)[2];
-                    reinterpret_cast<u32*>(&tangent)[0] = reinterpret_cast<const u32*>(&sMap21TangentAxis)[0];
-                    reinterpret_cast<u32*>(&tangent)[1] = reinterpret_cast<const u32*>(&sMap21TangentAxis)[1];
-                    reinterpret_cast<u32*>(&tangent)[2] = reinterpret_cast<const u32*>(&sMap21TangentAxis)[2];
+                    Vec worldUp = {0.0f, 1.0f, 0.0f};
+                    Vec worldPosNorm;
+                    Vec tangent = {0.0f, 0.0f, 1.0f};
+                    Vec moveNorm;
+                    Vec cross;
                     PSVECNormalize(&m_worldPosition, &worldPosNorm);
                     float upDot = PSVECDotProduct(&worldUp, &worldPosNorm);
                     PSMTXRotRad(pitchMtx, 'x', acosf(upDot));

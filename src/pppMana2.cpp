@@ -410,20 +410,20 @@ static int RenderWaterMesh(VMana2* mana2)
  * JP Address: TODO
  * JP Size: TODO
  */
-#pragma push
-#pragma opt_common_subs off
 static int UpdateWaterMesh(VMana2* mana2)
 {
-    float neighborScale;
-    float currentScale;
-    Vec origin;
-    Vec* positions;
-    int row;
-    int col;
-    int index;
-    float* waterHeightB;
     float* waterHeightA;
+    float* waterHeightB;
+    Vec* positions;
+    Vec origin;
+    float currentScale;
+    float neighborScale;
+    s32 col;
+    s32 row;
+    int index;
+    s32 stride;
 
+    stride = kWaterGridStride;
     waterHeightA = mana2->m_waterHeightA;
     positions = mana2->m_positions;
     waterHeightB = mana2->m_waterHeightB;
@@ -435,11 +435,10 @@ static int UpdateWaterMesh(VMana2* mana2)
         currentScale = 0.0f;
         neighborScale = 0.5f;
         for (col = 1; col < kWaterGridQuads; col++) {
-            index = row * kWaterGridStride + col;
-            float* center = &waterHeightA[index];
-            waterHeightB[index] = currentScale * center[0] +
-                                  neighborScale * (waterHeightA[index - kWaterGridStride] + waterHeightA[index + kWaterGridStride] +
-                                                   center[-1] + center[1]) -
+            index = row * stride + col;
+            waterHeightB[index] = currentScale * waterHeightA[index] +
+                                  neighborScale * (waterHeightA[index - stride] + waterHeightA[index + stride] +
+                                                   waterHeightA[index - 1] + waterHeightA[index + 1]) -
                                   waterHeightB[index];
         }
     }
@@ -461,7 +460,6 @@ static int UpdateWaterMesh(VMana2* mana2)
                               mana2->m_waterMtx, mana2->m_colors, mana2->m_texCoord1);
     return 1;
 }
-#pragma pop
 
 /*
  * --INFO--
@@ -573,8 +571,14 @@ static void CalcReflectionVector2(
     Mtx nodeRotMtx;
     Mtx nodeMtx;
     float (*nodeMatrix)[4];
+    u8 fmt;
+    Vec* vtxReflection;
     u16* dl = (u16*)displayList;
-    u16* dlEnd;
+    u8 drawFmt;
+    u16 itemCount;
+    int i;
+    u16 posIndex;
+    u16 normalIndex;
 
     CameraPcs.GetPosition(&cameraPos);
 
@@ -604,21 +608,18 @@ static void CalcReflectionVector2(
 
     const float half = 0.5f;
 
-    dlEnd = (u16*)((u8*)displayList + displayListSize);
-    while (dl < dlEnd) {
-        u8 drawFmt = *(u8*)dl;
-        u16 itemCount = *(u16*)((u8*)dl + 1);
-        int i;
-        u32 fmt = drawFmt & 7;
+    while (dl < (u16*)((u8*)displayList + displayListSize)) {
+        drawFmt = *(u8*)dl;
+        itemCount = *(u16*)((u8*)dl + 1);
+        fmt = drawFmt & 7;
 
         dl = (u16*)((u8*)dl + 3);
-        if (gUtil.IsHasDrawFmtDL(drawFmt) == 0) {
+        if (Util.IsHasDrawFmtDL(drawFmt) == 0) {
             break;
         }
         for (i = 0; i < itemCount; i++) {
-            Vec* vtxReflection;
-            u16 posIndex = dl[0];
-            u16 normalIndex = dl[1];
+            posIndex = dl[0];
+            normalIndex = dl[1];
             int axis = 0;
             float maxAxis;
             float invAxis;
@@ -629,8 +630,8 @@ static void CalcReflectionVector2(
                 dl++;
             }
 
-            gUtil.ConvI2FVector(objSpacePos, positions[posIndex], posScale);
-            gUtil.ConvI2FVector(objSpaceNormal, normals[normalIndex], normalScale);
+            Util.ConvI2FVector(objSpacePos, positions[posIndex], posScale);
+            Util.ConvI2FVector(objSpaceNormal, normals[normalIndex], normalScale);
             PSMTXMultVec(matrix, &objSpacePos, &objSpacePos);
             PSMTXMultVec(nodeRotMtx, &objSpaceNormal, &objSpaceNormal);
 
@@ -665,10 +666,7 @@ static void CalcReflectionVector2(
 
             switch (axis) {
             case 0:
-                {
-                    float two = 2.0f;
-                    invAxis = two * reflected.x;
-                }
+                invAxis = 2.0f * reflected.x;
                 if (vtxReflection->x >= 0.0f) {
                     vtxColor->r = (u8)(vtxColor->r + 0x7F);
                     uv.x = half - reflected.z / invAxis;
@@ -688,10 +686,7 @@ static void CalcReflectionVector2(
                 }
                 break;
             case 1:
-                {
-                    float two = 2.0f;
-                    invAxis = two * reflected.y;
-                }
+                invAxis = 2.0f * reflected.y;
                 if (vtxReflection->y >= 0.0f) {
                     vtxColor->g = (u8)(vtxColor->g + 0x7F);
                     uv.x = half + reflected.x / invAxis;
@@ -710,10 +705,7 @@ static void CalcReflectionVector2(
                 }
                 break;
             case 2:
-                {
-                    float two = 2.0f;
-                    invAxis = two * reflected.z;
-                }
+                invAxis = 2.0f * reflected.z;
                 if (vtxReflection->z >= 0.0f) {
                     vtxColor->b = (u8)(vtxColor->b + 0x7F);
                     uv.x = half + reflected.x / invAxis;
@@ -733,7 +725,7 @@ static void CalcReflectionVector2(
                 break;
             }
 
-            gUtil.ConvF2IVector2d(texCoord[normalIndex], uv, 12);
+            Util.ConvF2IVector2d(texCoord[normalIndex], uv, 12);
         }
     }
 
@@ -864,7 +856,7 @@ static void Mana2_BeforeDrawCallback(CChara::CModel*, void* work, void* step, fl
             GXSetScissor(0, 0, 0x280, 0x1C0);
             float texQuadZero = 0.0f;
             float texQuadSize = 128.0f;
-            gUtil.RenderTextureQuad(texQuadZero, texQuadZero, texQuadSize,
+            Util.RenderTextureQuad(texQuadZero, texQuadZero, texQuadSize,
                                     texQuadSize, baseParaboloidTexObjs, 0, 0, 0,
                                     GX_BL_SRCALPHA, GX_BL_INVSRCALPHA);
             baseParaboloidTexObjs++;
@@ -875,10 +867,10 @@ static void Mana2_BeforeDrawCallback(CChara::CModel*, void* work, void* step, fl
         GXSetScissor(0, 0, 0x280, 0x1C0);
         GXSetZTexture(GX_ZT_REPLACE, GX_TF_Z24X8, 0);
         GXSetColorUpdate(GX_FALSE);
-        gUtil.BeginQuadEnv();
+        Util.BeginQuadEnv();
         GXSetZMode(GX_TRUE, GX_ALWAYS, GX_TRUE);
         GXSetZCompLoc(GX_FALSE);
-        gUtil.SetVtxFmt_POS_CLR_TEX();
+        Util.SetVtxFmt_POS_CLR_TEX();
         _GXSetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR0A0);
         _GXSetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD0, GX_TEXMAP0, GX_COLOR_NULL);
         _GXSetTevColorIn(GX_TEVSTAGE0, GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO, GX_CC_ZERO);
@@ -898,8 +890,8 @@ static void Mana2_BeforeDrawCallback(CChara::CModel*, void* work, void* step, fl
         quadColor.g = 0xFF;
         quadColor.b = 0xFF;
         quadColor.a = 0;
-        gUtil.RenderQuad(quadMin, quadMax, quadColor, 0, 0);
-        gUtil.EndQuadEnv();
+        Util.RenderQuad(quadMin, quadMax, quadColor, 0, 0);
+        Util.EndQuadEnv();
         GXSetZTexture(GX_ZT_DISABLE, GX_TF_Z8, 0);
         GXSetColorUpdate(GX_TRUE);
         GXSetAlphaUpdate(GX_TRUE);
@@ -907,7 +899,7 @@ static void Mana2_BeforeDrawCallback(CChara::CModel*, void* work, void* step, fl
         quadMin.x = 0.0f;
         quadMin.y = 0.0f;
         quadMin.z = 0.0f;
-        gUtil.RenderTextureQuad(quadMin.x, quadMin.y, 128.0f,
+        Util.RenderTextureQuad(quadMin.x, quadMin.y, 128.0f,
                                 128.0f, &sceneTexObj, 0, 0, 0, GX_BL_SRCALPHA,
                                 GX_BL_INVSRCALPHA);
         mana2->m_paraboloidReady = 1;
@@ -1127,7 +1119,7 @@ void pppFrameMana2(pppMana2* pppMana2, pppMana2Step* step, _pppCtrlTable* ctrl)
                         mana2Work->m_displayListSize = displayList->m_size;
                         memcpy(mana2Work->m_displayListCopies[dlIndex], displayList->m_data, displayList->m_size);
                         DCFlushRange(mana2Work->m_displayListCopies[dlIndex], displayList->m_size);
-                        gUtil.ReWriteDisplayList(mana2Work->m_displayListCopies[dlIndex], displayList->m_size, 1);
+                        Util.ReWriteDisplayList(mana2Work->m_displayListCopies[dlIndex], displayList->m_size, 1);
                     }
                 }
 

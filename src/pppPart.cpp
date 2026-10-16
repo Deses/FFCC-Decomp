@@ -553,20 +553,6 @@ void pppMemFree(void* allocation)
 
 /*
  * --INFO--
- * PAL Address: 80056c74
- * PAL Size: 44b
- * EN Address: 0x80062AEC
- * EN Size: 52b
- * JP Address: TODO
- * JP Size: TODO
- */
-void pppHeapCheckLeak(CMemory::CStage* stage)
-{
-	stage->heapWalker(2, 0, 0xFFFFFFFF);
-}
-
-/*
- * --INFO--
  * PAL Address: 80056ca0
  * PAL Size: 76b
  * EN Address: 0x80062A94
@@ -589,6 +575,20 @@ unsigned long pppHeapUseRate(CMemory::CStage* stage)
 	}
 
 	return result;
+}
+
+/*
+ * --INFO--
+ * PAL Address: 80056c74
+ * PAL Size: 44b
+ * EN Address: 0x80062AEC
+ * EN Size: 52b
+ * JP Address: TODO
+ * JP Size: TODO
+ */
+void pppHeapCheckLeak(CMemory::CStage* stage)
+{
+	stage->heapWalker(2, 0, 0xFFFFFFFF);
 }
 
 /*
@@ -941,7 +941,7 @@ MatrixMode2:
 	if (pppMngSt->m_mapObjIndex == -1) {
 		goto LocalOnly;
 	}
-	MapMng.GetMapObjWMtx(pppMngSt->m_mapObjIndex, nodeMtx);
+	g_MapMng.GetMapObjWMtx(pppMngSt->m_mapObjIndex, nodeMtx);
 
 ApplyRotatedMatrix:
 	PSMTXMultVecSR(nodeMtx, &ppvMng->m_position, &tmpPos);
@@ -1031,7 +1031,7 @@ MatrixMode3:
 	goto ApplyRotatedMatrix;
 
 MatrixMode4:
-	MapMng.GetMapObjWMtx(pppMngSt->m_mapObjIndex, nodeMtx);
+	g_MapMng.GetMapObjWMtx(pppMngSt->m_mapObjIndex, nodeMtx);
 
 ApplyTranslatedMatrix:
 	nodeMtx[0][3] += ppvMng->m_position.x;
@@ -2168,7 +2168,7 @@ int pppHitCylinderSendSystem(_pppMngSt* pppMngSt, Vec* origin, Vec* vector, floa
 		cylinder.m_axis = *vector;
 		cylinder.m_radius = cylScale;
 
-		if (MapMng.CheckHitCylinder(&cylinder, vector, cylinderAttribute) != 0)
+		if (g_MapMng.CheckHitCylinder(&cylinder, vector, cylinderAttribute) != 0)
 		{
 			if (Game.m_currentSceneId == 7)
 			{
@@ -2184,7 +2184,7 @@ int pppHitCylinderSendSystem(_pppMngSt* pppMngSt, Vec* origin, Vec* vector, floa
 			else
 			{
 				Vec hitPos;
-				MapMng.m_hitMapObj->CalcHitPosition(&hitPos);
+				g_MapMng.m_hitMapObj->CalcHitPosition(&hitPos);
 				s32 partIndex = pppMngSt - PartMng.m_pppMng;
 				Game.HitParticleBG(partIndex, pppMngSt->m_kind, pppMngSt->m_nodeIndex, &hitPos, &pppMngSt->m_hitParams);
 			}

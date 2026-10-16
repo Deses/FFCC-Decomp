@@ -20,24 +20,20 @@
 #include "ffcc/util.h"
 #include "ffcc/vector.h"
 
-static const char lbl_80330228[] = "pc";
-static const char lbl_8033022C[] = "c";
-static const char lbl_80330230[] = "_root";
-static const char lbl_80330238[] = "mon";
-static const char lbl_8033023C[] = "m";
-static const char lbl_80330240[] = "npc";
-static const char lbl_80330244[] = "n";
-static const char lbl_80330248[] = "fa";
-static const char lbl_8033024C[] = "f";
-static const char lbl_80330250[] = "wep";
-static const char lbl_80330254[] = "w";
-static const char lbl_80330258[] = "loc";
-static const char lbl_8033025C[] = "l";
 
 #include "PowerPC_EABI_Support/Msl/MSL_C/MSL_Common/string.h"
 #include <PowerPC_EABI_Support/Runtime/New.h>
 #include <PowerPC_EABI_Support/Msl/MSL_C/MSL_Common/stdio.h>
 #include <math.h>
+
+const char* CCharaPcs::m_modelTable[6][3] = {
+    {"pc", "c", "_root"},
+    {"mon", "m", "_root"},
+    {"npc", "n", "_root"},
+    {"fa", "f", "_root"},
+    {"wep", "w", "_root"},
+    {"loc", "l", "_root"},
+};
 
 CCharaPcs CharaPcs;
 
@@ -177,19 +173,6 @@ static inline _GXColor ModulateColor(const _GXColor& src, const _GXColor& shade)
 
 /*
  * --INFO--
- * PAL Address: 0x8007b848
- * PAL Size: 136b
- * EN Address: TODO
- * EN Size: TODO
- * JP Address: TODO
- * JP Size: TODO
- */
-CCharaPcs::~CCharaPcs()
-{
-}
-
-/*
- * --INFO--
  * PAL Address: 0x8007a51c
  * PAL Size: 1124b
  * EN Address: TODO
@@ -291,7 +274,7 @@ CMemory::CStage* GET_CHARA_ALLOC_STAGE_S(int stageIndex, CMemory::CStage* stage)
 {
     switch (stageIndex) {
     case 1:
-        return MapMng.m_stage;
+        return g_MapMng.m_stage;
     case 2:
         return PartPcs.m_usbStreamState.m_stageLoad;
     case 3:
@@ -931,7 +914,7 @@ void CCharaPcs::drawMakeTexShadow()
     Graphic.SetViewport();
     Graphic.SetStdPixelFmt();
     Graphic.SetCopyClear(savedCopyClearColor, 0xFFFFFF);
-    gUtil.RenderTextureQuad(
+    Util.RenderTextureQuad(
         0.0f, 0.0f, static_cast<float>(m_texShadowSize), static_cast<float>(m_texShadowSize), &backBufferTexObj, 0, 0, 0,
         GX_BL_SRCALPHA, GX_BL_INVSRCALPHA);
 }
@@ -2660,11 +2643,3 @@ CProcessCallbackTable CCharaPcs::m_table[3] = {
     },
 };
 
-const char* CCharaPcs::m_modelTable[6][3] = {
-    {lbl_80330228, lbl_8033022C, lbl_80330230},
-    {lbl_80330238, lbl_8033023C, lbl_80330230},
-    {lbl_80330240, lbl_80330244, lbl_80330230},
-    {lbl_80330248, lbl_8033024C, lbl_80330230},
-    {lbl_80330250, lbl_80330254, lbl_80330230},
-    {lbl_80330258, lbl_8033025C, lbl_80330230},
-};

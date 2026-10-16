@@ -6,6 +6,8 @@
 
 #include <math.h>
 
+static int FindIntersection(const Vec&, const Vec&, const CMapCylinder&, float&);
+
 static const float kMapHitInitialTMin = 10.0f;
 static const float kMapHitEdgeBackoff = 0.5f;
 static const float kMapHitFaceBackoff = 0.30000001192092896f;
@@ -109,7 +111,7 @@ void CMapHit::Draw()
     CMapHitFace* face = m_faces;
     for (int faceIndex = 0; faceIndex < m_faceCount; faceIndex++, face++) {
         if ((face->m_drawFlags & 1) == 0) {
-            const CMapIdGrp* mapIdGrp = &MapMng.m_mapIdGrpArray[face->m_groupIndex];
+            const CMapIdGrp* mapIdGrp = &g_MapMng.m_mapIdGrpArray[face->m_groupIndex];
             GXColor colorABytes = *reinterpret_cast<const GXColor*>(&mapIdGrp->m_primaryColor);
             GXColor colorBBytes = *reinterpret_cast<const GXColor*>(&mapIdGrp->m_secondaryColor);
 
@@ -413,7 +415,7 @@ static inline int CheckLineCylinder(const Vec& lineStart, const Vec& lineDirecti
  */
 int CMapHit::CheckHitFaceCylinder(unsigned long mask)
 {
-    unsigned long groupMask = MapMng.GetMapIdGrpArray()[g_hit_lpface->m_groupIndex].m_mask;
+    unsigned long groupMask = g_MapMng.GetMapIdGrpArray()[g_hit_lpface->m_groupIndex].m_mask;
     if ((groupMask & mask) == 0) {
         return 0;
     }
@@ -624,13 +626,13 @@ int CMapHit::ReadOtmHit(CChunkFile& chunkFile)
         switch (chunk.m_id) {
         case 'NAME': {
             char* mapHitName = chunkFile.GetString();
-            MapMng.AttachMapHit(this, mapHitName);
+            g_MapMng.AttachMapHit(this, mapHitName);
             break;
         }
         case 'HITV': {
             m_vertexCount = static_cast<unsigned short>(chunk.m_arg0);
             m_vertices =
-                new (MapMng.m_stage, const_cast<char*>(s_maphit_cpp), 0x143)
+                new (g_MapMng.m_stage, const_cast<char*>(s_maphit_cpp), 0x143)
                     Vec[m_vertexCount];
 
             for (int i = 0; i < m_vertexCount; i++) {
@@ -659,7 +661,7 @@ int CMapHit::ReadOtmHit(CChunkFile& chunkFile)
         case 'HITF': {
             m_faceCount = static_cast<unsigned short>(chunk.m_arg0);
             m_faces =
-                new (MapMng.m_stage, const_cast<char*>(s_maphit_cpp), 0x159)
+                new (g_MapMng.m_stage, const_cast<char*>(s_maphit_cpp), 0x159)
                     CMapHitFace[m_faceCount];
 
             const float offsetScale = kMapHitVertexOffsetScale;
@@ -796,7 +798,7 @@ CMapHit::CMapHit()
  * JP Address: TODO
  * JP Size: TODO
  */
-int FindIntersection(const Vec& start, const Vec& direction, const CMapCylinder& cyl, float& outT)
+static int FindIntersection(const Vec& start, const Vec& direction, const CMapCylinder& cyl, float& outT)
 {
     Vec orthogonal;
     Vec bitangent;
