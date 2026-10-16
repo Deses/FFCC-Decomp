@@ -548,7 +548,7 @@ config.libs = [
             Object(NonMatching, "itemobj.cpp", extra_cflags=["-RTTI on", "-sdata 8", "-str reuse,readonly", "-inline auto,deferred"]),
             Object(NonMatching, "joybus.cpp", extra_cflags=["-str reuse,readonly", "-inline auto,deferred"]),
             Object(MatchingFor("GCCP01", "GCCE01", "GCCJGC"), "KeLns.cpp"),
-            Object(NonMatching, "LocationTitle2.cpp"),
+            Object(MatchingFor("GCCP01", "GCCE01", "GCCJGC"), "LocationTitle2.cpp"),
             Object(MatchingFor("GCCP01", "GCCE01", "GCCJGC"), "main.cpp"),
             Object(NonMatching, "manager.cpp"),
             Object(NonMatching, "map.cpp", extra_cflags=["-RTTI on", "-sdata 8", "-str reuse,readonly", "-inline auto,deferred"]),
